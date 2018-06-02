@@ -1,6 +1,7 @@
 ﻿using BitCoinTrader;
 using log4net;
 using NBitcoin;
+using Newtonsoft.Json;
 using SmartPesa.Objects;
 using SmartPesa.WorkflowLibrary;
 using System;
@@ -84,10 +85,10 @@ namespace SmartPesa.Workflow
                 BitCoinTraderConfig.LTC_FULL_NODE_URL = _keySettings["ltcFullNodeUrl"];
                 BitCoinTraderConfig.LTC_FULL_NODE_AUTH = _keySettings["ltcFullNodeAuth"];
                 BitCoinTraderConfig.LTC_INSIGHT_API = _keySettings["ltcInsightApi"];
-                string LtcPrivateKeyFile = _keySettings["ltcPrivateKeyFile"];
-                if (!string.IsNullOrEmpty(LtcPrivateKeyFile))
+                string ltcPrivateKeyFile = _keySettings["ltcPrivateKeyFile"];
+                if (!string.IsNullOrEmpty(ltcPrivateKeyFile))
                 {
-                    BitCoinTraderConfig.LTC_PRIVATE_KEY = ReadFile(AppDomain.CurrentDomain.BaseDirectory + LtcPrivateKeyFile);
+                    BitCoinTraderConfig.LTC_PRIVATE_KEY = ReadFile(AppDomain.CurrentDomain.BaseDirectory + ltcPrivateKeyFile);
                 }
                 BitCoinTraderConfig.LTC_MINER_FEE = decimal.Parse(_keySettings["ltcMinerFee"]);
             }
@@ -116,58 +117,59 @@ namespace SmartPesa.Workflow
             Response response = new Response();
             try
             {
-
                 if (dp.extra_data != null)
                 {
                     string receiverAddress = dp.extra_data["qrcode"].ToString();
                     decimal amount;
                     decimal.TryParse(dp.extra_data["amount"].ToString(), out amount);
-                    string crpto_currency_symbol = dp.extra_data["crpto_currency_symbol"].ToString();
+                    string crypto_currency_symbol = dp.extra_data["crypto_currency_symbol"].ToString();
+                    TransactionResultSet transaction = new TransactionResultSet();
+                    if (dp.extra_data.ContainsKey("transaction"))
+                        transaction = JsonConvert.DeserializeObject<TransactionResultSet>(dp.extra_data["transaction"].ToString());
 
-                    switch (crpto_currency_symbol)
+                    BitCoinTrader.Transaction cryptoTransaction = new BitCoinTrader.Transaction();
+
+                    switch (crypto_currency_symbol)
                     {
                         case "BTC":
-                            BitcoinTransaction bitcoinTransaction = new BitcoinTransaction();
-                            bitcoinTransaction.InitVars(
+                            cryptoTransaction.InitVars(
                                 _log,
                                 BitCoinTraderConfig.BTC_FULL_NODE_URL,
                                 BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
                                 BitCoinTraderConfig.BTC_INSIGHT_API,
                                 BitCoinTraderConfig.BTC_PRIVATE_KEY,
-                                BitCoinTraderConfig.BTC_MINER_FEE
+                                BitCoinTraderConfig.BTC_MINER_FEE,
+                                crypto_currency_symbol
                             );
-                            string signedBitcoinTxn = bitcoinTransaction.CreateRawTransaction(receiverAddress, amount);
-                            RPCResponse rpcBitcoinResponse = bitcoinTransaction.SendRawTransaction(signedBitcoinTxn);
-                            response.result = rpcBitcoinResponse;
-                            if (rpcBitcoinResponse.error != null)
-                            {
-                                response.status.code = (Objects.Error)rpcBitcoinResponse.error.code;
-                                response.status.value = rpcBitcoinResponse.error.message;
-                            }
                             break;
 
                         case "LTC":
-                            LitecoinTransaction litecoinTransaction = new LitecoinTransaction();
-                            litecoinTransaction.InitVars(
+                            cryptoTransaction.InitVars(
                                 _log,
-                                BitCoinTraderConfig.BTC_FULL_NODE_URL,
-                                BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
-                                BitCoinTraderConfig.BTC_INSIGHT_API,
-                                BitCoinTraderConfig.BTC_PRIVATE_KEY,
-                                BitCoinTraderConfig.BTC_MINER_FEE
+                                BitCoinTraderConfig.LTC_FULL_NODE_URL,
+                                BitCoinTraderConfig.LTC_FULL_NODE_AUTH,
+                                BitCoinTraderConfig.LTC_INSIGHT_API,
+                                BitCoinTraderConfig.LTC_PRIVATE_KEY,
+                                BitCoinTraderConfig.LTC_MINER_FEE,
+                                crypto_currency_symbol
                             );
-                            string signedLitecoinTxn = litecoinTransaction.CreateRawTransaction(receiverAddress, amount);
-                            RPCResponse rpcLitecoinResponse = litecoinTransaction.SendRawTransaction(signedLitecoinTxn);
-                            response.result = rpcLitecoinResponse;
-                            if (rpcLitecoinResponse.error != null)
-                            {
-                                response.status.code = (Objects.Error)rpcLitecoinResponse.error.code;
-                                response.status.value = rpcLitecoinResponse.error.message;
-                            }
                             break;
 
                         default:
+                            response.status.code = Objects.Error.InvalidParameters;
+                            response.status.value = "Crypto not support";
                             break;
+                    }
+
+                    if (response.status.code != Objects.Error.NoError) return response;
+
+                    string signedTxn = cryptoTransaction.CreateRawTransaction(receiverAddress, amount);
+                    RPCResponse rpcResponse = cryptoTransaction.SendRawTransaction(signedTxn, transaction.transaction_id);
+                    response.result = rpcResponse;
+                    if (rpcResponse.error != null)
+                    {
+                        response.status.code = (Objects.Error)rpcResponse.error.code;
+                        response.status.value = rpcResponse.error.message;
                     }
                 }
             }
