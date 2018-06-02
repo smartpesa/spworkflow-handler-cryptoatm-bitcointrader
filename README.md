@@ -1,1 +1,1 @@
-spWorkflow Handler: CryptoATMBitCoinTrader
+# spWorkflow Handler: CryptoATMBitCoinTrader
