@@ -60,11 +60,6 @@ namespace BitCoinTrader
             return tx.ToHex();
         }
 
-        public long CrytoCurrency2Satoshi(long amount)
-        {
-            return amount * 100000000;
-        }
-
         public List<UTXOResponse> GetListUnspent(BitcoinPubKeyAddress senderAddress)
         {
             dynamic obj = new
@@ -83,7 +78,7 @@ namespace BitCoinTrader
         {
             List<Coin> coins = new List<Coin>();
             int idx = 0;
-            while (coins.Sum(x => x.TxOut.Value.Satoshi) < CrytoCurrency2Satoshi((long)sendAmount))
+            while (coins.Sum(x => x.TxOut.Value.ToDecimal(MoneyUnit.BTC)) < sendAmount)
             {
                 TxOut txOut = new TxOut(new Money(uTXOs[idx].satoshis), senderAddr);
                 coins.Add(new Coin(new OutPoint(uint256.Parse(uTXOs[idx].txid), uTXOs[idx].vout), txOut));
