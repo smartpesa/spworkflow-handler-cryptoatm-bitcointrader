@@ -70,6 +70,7 @@
     <Compile Include="BitCoinTrader.cs" />
     <Compile Include="lib\ApiObjects.cs" />
     <Compile Include="lib\BitCoinTraderConfig.cs" />
+    <Compile Include="lib\Transaction.cs" />
     <Compile Include="lib\RPCObjects.cs" />
     <Compile Include="lib\WebUtils.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -88,10 +89,16 @@
     <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
+  <ItemGroup>
+    <Content Include="btc_private_key.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>copy "$(TargetDir)CryptoATMBitCoinTrader*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y
 copy "$(TargetDir)NBitcoin*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y
-copy "$(TargetDir)System.Security.Cryptography*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y</PostBuildEvent>
+copy "$(TargetDir)System.Security.Cryptography*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y
+copy "$(TargetDir)*.txt" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y</PostBuildEvent>
   </PropertyGroup>
 </Project>

@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,7 +19,6 @@ namespace SmartPesa.Workflow
     {
         private static NameValueCollection _keySettings;
         private static ConcurrentQueue<string> transactionQueue = new ConcurrentQueue<string>();
-        public static List<UTXOResponse> _uTXOs { get; set; }
 
         private static readonly ILog _log = LogManager.GetLogger("LogFile");
 
@@ -40,7 +40,15 @@ namespace SmartPesa.Workflow
           <CryptoATMBitCoinTrader>
             <keySettings>
               <add key="btcFullNodeUrl" value="bitcoin fullnode url" />
+              <add key="btcFullNodeAuth" value="bitcoin fullnode basic auth" />
+              <add key="btcInsightApi" value="bitcoin insight api url" />
               <add key="btcPrivateKeyFile" value="bitcoin private key file path" />
+              <add key="btcMinerFee" value="0.001" />
+              <add key="ltcFullNodeUrl" value="litecoin fullnode url" />
+              <add key="ltcFullNodeAuth" value="litecoin fullnode basic auth" />
+              <add key="ltcInsightApi" value="litecoin insight api url" />
+              <add key="ltcPrivateKeyFile" value="litecoin private key file path" />
+              <add key="ltcMinerFee" value="0.001" />
             </keySettings>
           </CryptoATMBitCoinTrader>
         */
@@ -68,8 +76,20 @@ namespace SmartPesa.Workflow
                 string btcPrivateKeyFile = _keySettings["btcPrivateKeyFile"];
                 if (!string.IsNullOrEmpty(btcPrivateKeyFile))
                 {
-                    BitCoinTraderConfig.BTC_PRIVATE_KEY = btcPrivateKeyFile;
+                    BitCoinTraderConfig.BTC_PRIVATE_KEY = ReadFile(AppDomain.CurrentDomain.BaseDirectory + btcPrivateKeyFile);
                 }
+                BitCoinTraderConfig.BTC_MINER_FEE = decimal.Parse(_keySettings["btcMinerFee"]);
+
+
+                BitCoinTraderConfig.LTC_FULL_NODE_URL = _keySettings["ltcFullNodeUrl"];
+                BitCoinTraderConfig.LTC_FULL_NODE_AUTH = _keySettings["ltcFullNodeAuth"];
+                BitCoinTraderConfig.LTC_INSIGHT_API = _keySettings["ltcInsightApi"];
+                string LtcPrivateKeyFile = _keySettings["ltcPrivateKeyFile"];
+                if (!string.IsNullOrEmpty(LtcPrivateKeyFile))
+                {
+                    BitCoinTraderConfig.LTC_PRIVATE_KEY = ReadFile(AppDomain.CurrentDomain.BaseDirectory + LtcPrivateKeyFile);
+                }
+                BitCoinTraderConfig.LTC_MINER_FEE = decimal.Parse(_keySettings["ltcMinerFee"]);
             }
             else
             {
@@ -81,7 +101,7 @@ namespace SmartPesa.Workflow
         {
             //NOTE: cast payload first
             DataProvider dp = (DataProvider)payload;
-            
+
             _log.Info("CrytoATMBitCoinTrader Tracking ID: " + dp.tracking_id);
             return HandleRequest(dp);
         }
@@ -107,16 +127,42 @@ namespace SmartPesa.Workflow
                     switch (crpto_currency_symbol)
                     {
                         case "BTC":
+                            BitcoinTransaction bitcoinTransaction = new BitcoinTransaction();
+                            bitcoinTransaction.InitVars(
+                                _log,
+                                BitCoinTraderConfig.BTC_FULL_NODE_URL,
+                                BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
+                                BitCoinTraderConfig.BTC_INSIGHT_API,
+                                BitCoinTraderConfig.BTC_PRIVATE_KEY,
+                                BitCoinTraderConfig.BTC_MINER_FEE
+                            );
+                            string signedBitcoinTxn = bitcoinTransaction.CreateRawTransaction(receiverAddress, amount);
+                            RPCResponse rpcBitcoinResponse = bitcoinTransaction.SendRawTransaction(signedBitcoinTxn);
+                            response.result = rpcBitcoinResponse;
+                            if (rpcBitcoinResponse.error != null)
+                            {
+                                response.status.code = (Objects.Error)rpcBitcoinResponse.error.code;
+                                response.status.value = rpcBitcoinResponse.error.message;
+                            }
                             break;
 
                         case "LTC":
-                            string signedTxn = CreateRawTransaction(receiverAddress, amount);
-                            RPCResponse rpcResponse = SendRawTransaction(signedTxn);
-                            response.result = rpcResponse;
-                            if (rpcResponse.error != null)
+                            LitecoinTransaction litecoinTransaction = new LitecoinTransaction();
+                            litecoinTransaction.InitVars(
+                                _log,
+                                BitCoinTraderConfig.BTC_FULL_NODE_URL,
+                                BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
+                                BitCoinTraderConfig.BTC_INSIGHT_API,
+                                BitCoinTraderConfig.BTC_PRIVATE_KEY,
+                                BitCoinTraderConfig.BTC_MINER_FEE
+                            );
+                            string signedLitecoinTxn = litecoinTransaction.CreateRawTransaction(receiverAddress, amount);
+                            RPCResponse rpcLitecoinResponse = litecoinTransaction.SendRawTransaction(signedLitecoinTxn);
+                            response.result = rpcLitecoinResponse;
+                            if (rpcLitecoinResponse.error != null)
                             {
-                                response.status.code = (Objects.Error)rpcResponse.error.code;
-                                response.status.value = rpcResponse.error.message;
+                                response.status.code = (Objects.Error)rpcLitecoinResponse.error.code;
+                                response.status.value = rpcLitecoinResponse.error.message;
                             }
                             break;
 
@@ -134,83 +180,10 @@ namespace SmartPesa.Workflow
             return response;
         }
 
-        public static string CreateRawTransaction(string receiverAddress, decimal amount)
+        private static string ReadFile(string filePath)
         {
-            BitcoinSecret sender = new BitcoinSecret(BitCoinTraderConfig.BTC_PRIVATE_KEY, Network.TestNet);
-            BitcoinAddress receiverAddr = BitcoinAddress.Create(receiverAddress, Network.TestNet);
-
-            _uTXOs = GetListUnspent(sender.GetAddress());
-
-            decimal minerFee = 0.001m;
-
-            Coin[] sendCoins = GetTxOuts(sender.GetAddress(), amount);
-
-            var txBuilder = new TransactionBuilder();
-            var tx = txBuilder
-                .AddCoins(sendCoins)
-                .AddKeys(sender.PrivateKey)
-                .Send(receiverAddr, amount.ToString())
-                .SetChange(sender.GetAddress())
-                .SendFees(minerFee.ToString())
-                .BuildTransaction(true);
-
-            _log.Debug("CreateRawTransaction: ");
-            _log.Debug(tx);
-            _log.Debug(tx.ToHex());
-
-            return tx.ToHex();
-        }
-
-        private static List<UTXOResponse> GetListUnspent(BitcoinPubKeyAddress address)
-        {
-            dynamic obj = new
-            {
-                addrs = address.ToString()
-            };
-
-            string jsonUTXO = WebUtils.RequestApi(_log, "/addrs/utxo", Newtonsoft.Json.JsonConvert.SerializeObject(obj));
-            List<UTXOResponse> uTXOResponse = WebUtils.ParseApiResponse<List<UTXOResponse>>(jsonUTXO);
-
-            _log.InfoFormat("Total amount unspent: {0}", uTXOResponse.Sum(x => x.amount));
-            return uTXOResponse;
-        }
-
-        private static Coin[] GetTxOuts(BitcoinPubKeyAddress senderAddr, decimal sendAmount)
-        {
-            List<Coin> coins = new List<Coin>();
-            int idx = 0;
-            while (coins.Sum(x => x.TxOut.Value.Satoshi) < CrytoCurrency2Satoshi((long)sendAmount))
-            {
-                TxOut txOut = new TxOut(new Money(_uTXOs[idx].satoshis), senderAddr);
-                coins.Add(new Coin(new OutPoint(uint256.Parse(_uTXOs[idx].txid), _uTXOs[idx].vout), txOut));
-                idx++;
-            }
-
-            return coins.ToArray();
-        }
-
-        private static long CrytoCurrency2Satoshi(long crytoCurrency)
-        {
-            return crytoCurrency * 100000000;
-        }
-
-        public static RPCResponse SendRawTransaction(string signedHex)
-        {
-            Dictionary<string, object> rPCRequest = new Dictionary<string, object>()
-            {
-                { "jsonrpc", "1.0" },
-                { "id", "testid" },
-                { "method", "sendrawtransaction" },
-                { "params", new List<string> {
-                    signedHex
-                }
-            }};
-
-            string jsonRequest = Newtonsoft.Json.JsonConvert.SerializeObject(rPCRequest);
-            _log.Info("Request: " + jsonRequest);
-            string response = WebUtils.RequestRPC(_log, jsonRequest);
-            _log.Info("Response: " + response);
-            return WebUtils.ParseRPCResponse<RPCResponse>(response);
+            if (!File.Exists(filePath)) throw new Exception("File not exists");
+            return File.ReadAllText(filePath);
         }
     }
 }

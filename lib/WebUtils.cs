@@ -7,12 +7,12 @@ namespace BitCoinTrader
 {
     public class WebUtils
     {
-        public static string RequestRPC(ILog log, string jsonParameters = null)
+        public static string RequestRPC(ILog log, string url, string auth, string jsonParameters = null)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(BitCoinTraderConfig.BTC_FULL_NODE_URL);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.ContentType = "application/json";
-            req.Headers["authorization"] = "Basic " + BitCoinTraderConfig.BTC_FULL_NODE_AUTH;
+            req.Headers["authorization"] = "Basic " + auth;
             using (var streamWriter = new StreamWriter(req.GetRequestStream()))
             {
                 streamWriter.Write(jsonParameters);
@@ -62,7 +62,7 @@ namespace BitCoinTrader
 
         public static string RequestApi(ILog log, string url, string jsonParameters)
         {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(BitCoinTraderConfig.BTC_INSIGHT_API + url);
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.Method = "POST";
             req.ContentType = "application/json";
             using (var streamWriter = new StreamWriter(req.GetRequestStream()))
