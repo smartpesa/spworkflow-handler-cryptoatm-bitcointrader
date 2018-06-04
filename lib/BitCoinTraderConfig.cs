@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace BitCoinTrader
+﻿namespace BitCoinTrader
 {
     public class BitCoinTraderConfig
     {
+        public static int EXPIRE { get; set; }
         public static string BTC_FULL_NODE_URL { get; set; }
         public static string BTC_FULL_NODE_AUTH { get; set; }
         public static string BTC_INSIGHT_API { get; set; }

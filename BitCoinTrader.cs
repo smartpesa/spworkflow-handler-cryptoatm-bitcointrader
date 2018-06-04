@@ -1,25 +1,20 @@
 ﻿using BitCoinTrader;
 using log4net;
-using NBitcoin;
 using Newtonsoft.Json;
 using SmartPesa.Objects;
 using SmartPesa.WorkflowLibrary;
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace SmartPesa.Workflow
 {
     public class CryptoATMBitCoinTrader : DestinationBase
     {
         private static NameValueCollection _keySettings;
-        private static ConcurrentQueue<string> transactionQueue = new ConcurrentQueue<string>();
+        private static bool _isSending = false;
 
         private static readonly ILog _log = LogManager.GetLogger("LogFile");
 
@@ -40,6 +35,7 @@ namespace SmartPesa.Workflow
          
           <CryptoATMBitCoinTrader>
             <keySettings>
+              <add key="expire" value="5" /> <!-- in seconds -->
               <add key="btcFullNodeUrl" value="bitcoin fullnode url" />
               <add key="btcFullNodeAuth" value="bitcoin fullnode basic auth" />
               <add key="btcInsightApi" value="bitcoin insight api url" />
@@ -71,6 +67,7 @@ namespace SmartPesa.Workflow
 
             if (_keySettings != null)
             {
+                BitCoinTraderConfig.EXPIRE = int.Parse(_keySettings["expire"]);
                 BitCoinTraderConfig.BTC_FULL_NODE_URL = _keySettings["btcFullNodeUrl"];
                 BitCoinTraderConfig.BTC_FULL_NODE_AUTH = _keySettings["btcFullNodeAuth"];
                 BitCoinTraderConfig.BTC_INSIGHT_API = _keySettings["btcInsightApi"];
@@ -119,7 +116,8 @@ namespace SmartPesa.Workflow
             {
                 if (dp.extra_data != null)
                 {
-                    string receiverAddress = dp.extra_data["qrcode"].ToString();
+                    DateTime expires_at = DateTime.Now.AddSeconds(BitCoinTraderConfig.EXPIRE);
+                    string receiver_address = dp.extra_data["qrcode"].ToString();
                     decimal amount;
                     decimal.TryParse(dp.extra_data["amount"].ToString(), out amount);
                     string crypto_currency_symbol = dp.extra_data["crypto_currency_symbol"].ToString();
@@ -127,49 +125,64 @@ namespace SmartPesa.Workflow
                     if (dp.extra_data.ContainsKey("transaction"))
                         transaction = JsonConvert.DeserializeObject<TransactionResultSet>(dp.extra_data["transaction"].ToString());
 
-                    BitCoinTrader.Transaction cryptoTransaction = new BitCoinTrader.Transaction();
-
-                    switch (crypto_currency_symbol)
+                    while (_isSending)
                     {
-                        case "BTC":
-                            cryptoTransaction.InitVars(
-                                _log,
-                                BitCoinTraderConfig.BTC_FULL_NODE_URL,
-                                BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
-                                BitCoinTraderConfig.BTC_INSIGHT_API,
-                                BitCoinTraderConfig.BTC_PRIVATE_KEY,
-                                BitCoinTraderConfig.BTC_MINER_FEE,
-                                crypto_currency_symbol
-                            );
-                            break;
-
-                        case "LTC":
-                            cryptoTransaction.InitVars(
-                                _log,
-                                BitCoinTraderConfig.LTC_FULL_NODE_URL,
-                                BitCoinTraderConfig.LTC_FULL_NODE_AUTH,
-                                BitCoinTraderConfig.LTC_INSIGHT_API,
-                                BitCoinTraderConfig.LTC_PRIVATE_KEY,
-                                BitCoinTraderConfig.LTC_MINER_FEE,
-                                crypto_currency_symbol
-                            );
-                            break;
-
-                        default:
-                            response.status.code = Objects.Error.InvalidParameters;
-                            response.status.value = "Crypto not support";
-                            break;
+                        Thread.Sleep(500);
                     }
 
-                    if (response.status.code != Objects.Error.NoError) return response;
-
-                    string signedTxn = cryptoTransaction.CreateRawTransaction(receiverAddress, amount);
-                    RPCResponse rpcResponse = cryptoTransaction.SendRawTransaction(signedTxn, transaction.transaction_id);
-                    response.result = rpcResponse;
-                    if (rpcResponse.error != null)
+                    if (expires_at < DateTime.Now)
                     {
-                        response.status.code = (Objects.Error)rpcResponse.error.code;
-                        response.status.value = rpcResponse.error.message;
+                        response.status.code = Objects.Error.SystemTimeout;
+                        response.status.value = "Timeout";
+                    }
+                    else
+                    {
+                        _isSending = true;
+                        BitCoinTrader.Transaction cryptoTransaction = new BitCoinTrader.Transaction();
+
+                        switch (crypto_currency_symbol)
+                        {
+                            case "BTC":
+                                cryptoTransaction.InitVars(
+                                    _log,
+                                    BitCoinTraderConfig.BTC_FULL_NODE_URL,
+                                    BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
+                                    BitCoinTraderConfig.BTC_INSIGHT_API,
+                                    BitCoinTraderConfig.BTC_PRIVATE_KEY,
+                                    BitCoinTraderConfig.BTC_MINER_FEE,
+                                    crypto_currency_symbol
+                                );
+                                break;
+
+                            case "LTC":
+                                cryptoTransaction.InitVars(
+                                    _log,
+                                    BitCoinTraderConfig.LTC_FULL_NODE_URL,
+                                    BitCoinTraderConfig.LTC_FULL_NODE_AUTH,
+                                    BitCoinTraderConfig.LTC_INSIGHT_API,
+                                    BitCoinTraderConfig.LTC_PRIVATE_KEY,
+                                    BitCoinTraderConfig.LTC_MINER_FEE,
+                                    crypto_currency_symbol
+                                );
+                                break;
+
+                            default:
+                                response.status.code = Objects.Error.InvalidParameters;
+                                response.status.value = "Crypto not support";
+                                break;
+                        }
+
+                        if (response.status.code != Objects.Error.NoError) return response;
+
+                        string signedTxn = cryptoTransaction.CreateRawTransaction(receiver_address, amount);
+                        RPCResponse rpcResponse = cryptoTransaction.SendRawTransaction(signedTxn, transaction.transaction_id);
+                        response.result = rpcResponse;
+                        if (rpcResponse.error != null)
+                        {
+                            response.status.code = (Objects.Error)rpcResponse.error.code;
+                            response.status.value = rpcResponse.error.message;
+                        }
+                        _isSending = false;
                     }
                 }
             }
@@ -177,6 +190,7 @@ namespace SmartPesa.Workflow
             {
                 response.status.code = Objects.Error.ServerError;
                 response.status.value = ex.Message;
+                _isSending = false;
             }
 
             return response;

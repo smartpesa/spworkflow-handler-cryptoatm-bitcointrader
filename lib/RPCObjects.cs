@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace BitCoinTrader
+﻿namespace BitCoinTrader
 {
     public class Inputs
     {
