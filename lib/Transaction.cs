@@ -40,6 +40,8 @@ namespace BitCoinTrader
 
             if (uTXOs.Count == 0) throw new Exception("Sender address don't have utxo");
 
+            amount += _minerFee;
+
             if (uTXOs.Sum(item => item.amount) < amount) throw new Exception(string.Format("Sender's total amount: {0} {1} less than send amount {2} {3}", uTXOs.Sum(item => item.amount), _currencySymbol, amount, _currencySymbol));
 
             Coin[] sendCoins = GetTxOuts(uTXOs, _sender.GetAddress(), amount);
