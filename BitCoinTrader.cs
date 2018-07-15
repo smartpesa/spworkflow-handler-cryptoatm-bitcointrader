@@ -1,13 +1,16 @@
 ﻿using BitCoinTrader;
 using log4net;
 using Newtonsoft.Json;
+using SmartPesa.Common;
 using SmartPesa.Objects;
 using SmartPesa.WorkflowLibrary;
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
 using System.IO;
 using System.Threading;
+using ZeroMQ;
 
 namespace SmartPesa.Workflow
 {
@@ -39,12 +42,12 @@ namespace SmartPesa.Workflow
               <add key="btcFullNodeUrl" value="bitcoin fullnode url" />
               <add key="btcFullNodeAuth" value="bitcoin fullnode basic auth" />
               <add key="btcInsightApi" value="bitcoin insight api url" />
-              <add key="btcPrivateKeyFile" value="bitcoin private key file path" />
+              <add key="btcSenderAddress" value="bitcoin sender address (public address)" />
               <add key="btcMinerFee" value="0.001" />
               <add key="ltcFullNodeUrl" value="litecoin fullnode url" />
               <add key="ltcFullNodeAuth" value="litecoin fullnode basic auth" />
               <add key="ltcInsightApi" value="litecoin insight api url" />
-              <add key="ltcPrivateKeyFile" value="litecoin private key file path" />
+              <add key="ltcSenderAddress" value="litecoin sender address (public address)" />
               <add key="ltcMinerFee" value="0.001" />
             </keySettings>
           </CryptoATMBitCoinTrader>
@@ -71,22 +74,13 @@ namespace SmartPesa.Workflow
                 BitCoinTraderConfig.BTC_FULL_NODE_URL = _keySettings["btcFullNodeUrl"];
                 BitCoinTraderConfig.BTC_FULL_NODE_AUTH = _keySettings["btcFullNodeAuth"];
                 BitCoinTraderConfig.BTC_INSIGHT_API = _keySettings["btcInsightApi"];
-                string btcPrivateKeyFile = _keySettings["btcPrivateKeyFile"];
-                if (!string.IsNullOrEmpty(btcPrivateKeyFile))
-                {
-                    BitCoinTraderConfig.BTC_PRIVATE_KEY = ReadFile(AppDomain.CurrentDomain.BaseDirectory + btcPrivateKeyFile);
-                }
+                BitCoinTraderConfig.BTC_SENDER_ADDRESS = _keySettings["btcSenderAddress"];
                 BitCoinTraderConfig.BTC_MINER_FEE = decimal.Parse(_keySettings["btcMinerFee"]);
-
 
                 BitCoinTraderConfig.LTC_FULL_NODE_URL = _keySettings["ltcFullNodeUrl"];
                 BitCoinTraderConfig.LTC_FULL_NODE_AUTH = _keySettings["ltcFullNodeAuth"];
                 BitCoinTraderConfig.LTC_INSIGHT_API = _keySettings["ltcInsightApi"];
-                string ltcPrivateKeyFile = _keySettings["ltcPrivateKeyFile"];
-                if (!string.IsNullOrEmpty(ltcPrivateKeyFile))
-                {
-                    BitCoinTraderConfig.LTC_PRIVATE_KEY = ReadFile(AppDomain.CurrentDomain.BaseDirectory + ltcPrivateKeyFile);
-                }
+                BitCoinTraderConfig.LTC_SENDER_ADDRESS = _keySettings["ltcSenderAddress"];
                 BitCoinTraderConfig.LTC_MINER_FEE = decimal.Parse(_keySettings["ltcMinerFee"]);
             }
             else
@@ -148,7 +142,7 @@ namespace SmartPesa.Workflow
                                     BitCoinTraderConfig.BTC_FULL_NODE_URL,
                                     BitCoinTraderConfig.BTC_FULL_NODE_AUTH,
                                     BitCoinTraderConfig.BTC_INSIGHT_API,
-                                    BitCoinTraderConfig.BTC_PRIVATE_KEY,
+                                    BitCoinTraderConfig.BTC_SENDER_ADDRESS,
                                     BitCoinTraderConfig.BTC_MINER_FEE,
                                     crypto_currency_symbol
                                 );
@@ -160,7 +154,7 @@ namespace SmartPesa.Workflow
                                     BitCoinTraderConfig.LTC_FULL_NODE_URL,
                                     BitCoinTraderConfig.LTC_FULL_NODE_AUTH,
                                     BitCoinTraderConfig.LTC_INSIGHT_API,
-                                    BitCoinTraderConfig.LTC_PRIVATE_KEY,
+                                    BitCoinTraderConfig.LTC_SENDER_ADDRESS,
                                     BitCoinTraderConfig.LTC_MINER_FEE,
                                     crypto_currency_symbol
                                 );
@@ -174,13 +168,32 @@ namespace SmartPesa.Workflow
 
                         if (response.status.code != Objects.Error.NoError) return response;
 
-                        string signedTxn = cryptoTransaction.CreateRawTransaction(receiver_address, amount);
-                        RPCResponse rpcResponse = cryptoTransaction.SendRawTransaction(signedTxn, transaction.transaction_id);
-                        response.result = rpcResponse;
-                        if (rpcResponse.error != null)
+                        List<UTXOResponse> uTXOs = cryptoTransaction.GetListUnspent(cryptoTransaction._sender);
+
+                        if (uTXOs.Count != 0)
                         {
-                            response.status.code = (Objects.Error)rpcResponse.error.code;
-                            response.status.value = rpcResponse.error.message;
+                            DataProvider dataProvider = new DataProvider();
+                            dataProvider.extra_data.Add("uTXOs", uTXOs);
+                            dataProvider.extra_data.Add("amount", amount);
+                            dataProvider.extra_data.Add("minerFee", cryptoTransaction._minerFee);
+                            dataProvider.extra_data.Add("receiverAddress", receiver_address);
+                            dataProvider.extra_data.Add("currencySymbol", cryptoTransaction._currencySymbol);
+                            response = SpMessage.Transact<DataProvider, Response>(dataProvider, GetZMQAddress(crypto_currency_symbol) , new ZContext(), log: _log);
+                            if (response.status.code == Objects.Error.NoError)
+                            {
+                                RPCResponse rpcResponse = cryptoTransaction.SendRawTransaction(response.result.ToString(), transaction.transaction_id);
+                                response.result = rpcResponse;
+                                if (rpcResponse.error != null)
+                                {
+                                    response.status.code = (Objects.Error)rpcResponse.error.code;
+                                    response.status.value = rpcResponse.error.message;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            response.status.code = Objects.Error.ServerError;
+                            response.status.value = "Sender address don't have utxo";
                         }
                         _isSending = false;
                     }
@@ -196,10 +209,11 @@ namespace SmartPesa.Workflow
             return response;
         }
 
-        private static string ReadFile(string filePath)
+        private static string GetZMQAddress(string crypto_currency_symbol)
         {
-            if (!File.Exists(filePath)) throw new Exception("File not exists");
-            return File.ReadAllText(filePath);
+            if (crypto_currency_symbol == "BTC") return AddressLabel.SignBitcoin;
+            if (crypto_currency_symbol == "LTC") return AddressLabel.SignLitecoin;
+            return AddressLabel.SignLitecoin;
         }
     }
 }

@@ -11,6 +11,8 @@
     <AssemblyName>CryptoATMBitCoinTrader</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <NuGetPackageImportStamp>
+    </NuGetPackageImportStamp>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -49,7 +51,7 @@
       <HintPath>..\..\packages\System.Net.Http.4.3.3\lib\net46\System.Net.Http.dll</HintPath>
     </Reference>
     <Reference Include="System.Security.Cryptography.Algorithms, Version=4.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\System.Security.Cryptography.Algorithms.4.3.0\lib\net461\System.Security.Cryptography.Algorithms.dll</HintPath>
+      <HintPath>..\..\packages\System.Security.Cryptography.Algorithms.4.3.1\lib\net461\System.Security.Cryptography.Algorithms.dll</HintPath>
     </Reference>
     <Reference Include="System.Security.Cryptography.Encoding, Version=4.0.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\..\packages\System.Security.Cryptography.Encoding.4.3.0\lib\net46\System.Security.Cryptography.Encoding.dll</HintPath>
@@ -57,18 +59,20 @@
     <Reference Include="System.Security.Cryptography.Primitives, Version=4.0.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>..\..\packages\System.Security.Cryptography.Primitives.4.3.0\lib\net46\System.Security.Cryptography.Primitives.dll</HintPath>
     </Reference>
-    <Reference Include="System.Security.Cryptography.X509Certificates, Version=4.1.1.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <HintPath>..\..\packages\System.Security.Cryptography.X509Certificates.4.3.0\lib\net461\System.Security.Cryptography.X509Certificates.dll</HintPath>
+    <Reference Include="System.Security.Cryptography.X509Certificates, Version=4.1.1.2, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\System.Security.Cryptography.X509Certificates.4.3.2\lib\net461\System.Security.Cryptography.X509Certificates.dll</HintPath>
     </Reference>
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
+    <Reference Include="ZeroMQ, Version=4.1.0.22, Culture=neutral, PublicKeyToken=4a9630883fd6c563, processorArchitecture=MSIL">
+      <HintPath>..\..\packages\ZeroMQ.4.1.0.22\lib\net40\ZeroMQ.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="BitCoinTrader.cs" />
-    <Compile Include="lib\ApiObjects.cs" />
     <Compile Include="lib\BitCoinTraderConfig.cs" />
     <Compile Include="lib\Transaction.cs" />
     <Compile Include="lib\RPCObjects.cs" />
@@ -76,6 +80,10 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\SmartPesa.Common\SmartPesa.Common.csproj">
+      <Project>{84f224a6-2ef7-4b93-969b-3d5fe9fc758d}</Project>
+      <Name>SmartPesa.Common</Name>
+    </ProjectReference>
     <ProjectReference Include="..\..\spobjects\SmartPesa.Objects.csproj">
       <Project>{c2a54acc-da78-4313-9ce0-eabe40ba1cca}</Project>
       <Name>SmartPesa.Objects</Name>
@@ -89,19 +97,17 @@
     <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
-  <ItemGroup>
-    <Content Include="btc_private_key.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-    <Content Include="ltc_private_key.txt">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
     <PostBuildEvent>copy "$(TargetDir)CryptoATMBitCoinTrader*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y
 copy "$(TargetDir)NBitcoin*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y
-copy "$(TargetDir)System.Security.Cryptography*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y
-copy "$(TargetDir)*.txt" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y</PostBuildEvent>
+copy "$(TargetDir)System.Security.Cryptography*.*" "$(TargetDir)..\..\..\WorkflowEngine\bin\$(Configuration)\" /Y</PostBuildEvent>
   </PropertyGroup>
+  <Import Project="..\..\packages\ZeroMQ.4.1.0.22\build\net40\ZeroMQ.targets" Condition="Exists('..\..\packages\ZeroMQ.4.1.0.22\build\net40\ZeroMQ.targets')" />
+  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
+    </PropertyGroup>
+    <Error Condition="!Exists('..\..\packages\ZeroMQ.4.1.0.22\build\net40\ZeroMQ.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\packages\ZeroMQ.4.1.0.22\build\net40\ZeroMQ.targets'))" />
+  </Target>
 </Project>

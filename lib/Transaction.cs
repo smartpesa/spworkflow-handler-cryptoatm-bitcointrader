@@ -1,5 +1,6 @@
 ﻿using log4net;
 using NBitcoin;
+using SmartPesa.Objects;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,16 +13,16 @@ namespace BitCoinTrader
         private string _fullnodeUrl;
         private string _fullnodeAuth;
         private string _insightApi;
-        private string _currencySymbol;
-        private BitcoinSecret _sender;
-        private decimal _minerFee;
+        public string _currencySymbol;
+        public BitcoinPubKeyAddress _sender { get; set; }
+        public decimal _minerFee { get; set; }
 
         public Transaction()
         {
 
         }
 
-        public void InitVars(ILog log, string fullnodeUrl, string fullnodeAuth, string insightApi, string privateKey, decimal minerFee, string currencySymbol)
+        public void InitVars(ILog log, string fullnodeUrl, string fullnodeAuth, string insightApi, string senderAddress, decimal minerFee, string currencySymbol)
         {
             _log = log;
             _fullnodeUrl = fullnodeUrl;
@@ -29,14 +30,14 @@ namespace BitCoinTrader
             _insightApi = insightApi;
             _minerFee = minerFee;
             _currencySymbol = currencySymbol;
-            _sender = new BitcoinSecret(privateKey);
+            _sender = new BitcoinPubKeyAddress(senderAddress);
         }
 
         public string CreateRawTransaction(string receiverAddress, decimal amount)
         {
             BitcoinAddress receiverAddr = BitcoinAddress.Create(receiverAddress);
 
-            List<UTXOResponse> uTXOs = GetListUnspent(_sender.GetAddress());
+            List<UTXOResponse> uTXOs = GetListUnspent(_sender);
 
             if (uTXOs.Count == 0) throw new Exception("Sender address don't have utxo");
 
@@ -44,16 +45,16 @@ namespace BitCoinTrader
 
             if (uTXOs.Sum(item => item.amount) < amount) throw new Exception(string.Format("Sender's total amount: {0} {1} less than send amount {2} {3}", uTXOs.Sum(item => item.amount), _currencySymbol, amount, _currencySymbol));
 
-            Coin[] sendCoins = GetTxOuts(uTXOs, _sender.GetAddress(), amount);
+            Coin[] sendCoins = GetTxOuts(uTXOs, _sender, amount);
 
             var txBuilder = new TransactionBuilder();
             var tx = txBuilder
                 .AddCoins(sendCoins)
-                .AddKeys(_sender.PrivateKey)
+                //.AddKeys(_sender.PrivateKey)
                 .Send(receiverAddr, (amount - _minerFee).ToString())
-                .SetChange(_sender.GetAddress())
+                .SetChange(_sender)
                 .SendFees(_minerFee.ToString())
-                .BuildTransaction(true);
+                .BuildTransaction(false);
 
             _log.Debug("CreateRawTransaction: ");
             _log.Debug(tx);
